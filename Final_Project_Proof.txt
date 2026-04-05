@@ -1,0 +1,116 @@
+FLIGHT PIPELINE FINAL REPORT - Sat Jan  3 08:46:41 AM PKT 2026
+--------------------------------------
+1. MASKED DATA SAMPLE:
+      DEST_COUNTRY_NAME                                 masked_destination
+0                 Qatar  55ccc5014f2a6d4c42c7b1b7e74dd26a2983c362b14c89...
+1                Kuwait  10c3c2e2edc1f1f0696bf6f30af2fc80b4e1759ab4614b...
+2  United Arab Emirates  dd64913c8b91d76ca27b371f0b86fd30452370469b8cad...
+3          Saudi Arabia  ed9ad13611d7164839dd3feaf9a7f6a75a4138f389e0d4...
+4               Bahrain  94b2859b913c9e2cff6a5b2ecf260ef36c3694e366b159...
+
+2. DAG EXECUTION STATUS:
+Usage: airflow dags state [-h] [-v] dag_id logical_date_or_run_id
+
+Get the status of a dag run
+
+Positional Arguments:
+  dag_id                The id of the dag
+  logical_date_or_run_id
+                        The logical date of the DAG or run_id of the DAGRun
+
+Options:
+  -h, --help            show this help message and exit
+  -v, --verbose         Make logging output more verbose
+
+2. RECENT DAG RUNS STATUS:
+Usage: airflow [-h] GROUP_OR_COMMAND ...
+
+Positional Arguments:
+  GROUP_OR_COMMAND
+
+    Groups
+      assets            Manage assets
+      backfill          Manage backfills
+      celery            Celery components
+      config            View configuration
+      connections       Manage connections
+      dags              Manage DAGs
+      db                Database operations
+      db-manager        Manage externally connected database managers
+      fab-db            Manage FAB
+      jobs              Manage jobs
+      pools             Manage pools
+      providers         Display providers
+      roles             Manage roles
+      tasks             Manage tasks
+      users             Manage users
+      variables         Manage variables
+
+    Commands:
+      api-server        Start an Airflow API server instance
+      cheat-sheet       Display cheat sheet
+      dag-processor     Start a dag processor instance
+      info              Show information about current Airflow and environment
+      kerberos          Start a kerberos ticket renewer
+      permissions-cleanup
+                        Clean up DAG permissions in Flask-AppBuilder tables
+      plugins           Dump information about loaded plugins
+      rotate-fernet-key
+                        Rotate encrypted connection credentials and variables
+      scheduler         Start a scheduler instance
+      standalone        Run an all-in-one copy of Airflow
+      sync-perm         Update permissions for existing roles and optionally
+                        DAGs
+      triggerer         Start a triggerer instance
+      version           Show the version
+
+Options:
+  -h, --help            show this help message and exit
+Usage: airflow [-h] GROUP_OR_COMMAND ...
+
+Positional Arguments:
+  GROUP_OR_COMMAND
+
+    Groups
+      assets            Manage assets
+      backfill          Manage backfills
+      celery            Celery components
+      config            View configuration
+      connections       Manage connections
+      dags              Manage DAGs
+      db                Database operations
+      db-manager        Manage externally connected database managers
+      fab-db            Manage FAB
+      jobs              Manage jobs
+      pools             Manage pools
+      providers         Display providers
+      roles             Manage roles
+      tasks             Manage tasks
+      users             Manage users
+      variables         Manage variables
+
+    Commands:
+      api-server        Start an Airflow API server instance
+      cheat-sheet       Display cheat sheet
+      dag-processor     Start a dag processor instance
+      info              Show information about current Airflow and environment
+      kerberos          Start a kerberos ticket renewer
+      permissions-cleanup
+                        Clean up DAG permissions in Flask-AppBuilder tables
+      plugins           Dump information about loaded plugins
+      rotate-fernet-key
+                        Rotate encrypted connection credentials and variables
+      scheduler         Start a scheduler instance
+      standalone        Run an all-in-one copy of Airflow
+      sync-perm         Update permissions for existing roles and optionally
+                        DAGs
+      triggerer         Start a triggerer instance
+      version           Show the version
+
+Options:
+  -h, --help            show this help message and exit
+dag_id                     | run_id                              | state   | run_after                 | logical_date              | start_date                       | end_date                        
+===========================+=====================================+=========+===========================+===========================+==================================+=================================
+flight_data_pipeline_final | scheduled__2026-01-03T00:00:00+00:0 | success | 2026-01-03T00:00:00+00:00 | 2026-01-03T00:00:00+00:00 | 2026-01-03T03:42:29.481584+00:00 | 2026-01-03T03:43:46.695658+00:00
+                           | 0                                   |         |                           |                           |                                  |                                 
+                                                                                                                                                                                                        

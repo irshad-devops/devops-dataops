@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Airflow & Logs
+logs/
+airflow.db
+unittests.cfg
+
+# Environments & Secrets
+.env
+.venv/
+env/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# OS files
+.DS_Store
+
+# Ignore the specific GCP JSON key in the terraform folder
+terraform/marwat-project-*.json
+
+# Ignore the copy in the config folder
+config/gcp-key.json
+
+# Ignore any other random JSON keys
+*.json
+
+# Ignore Terraform local state (important!)
+terraform/.terraform/
+terraform/*.tfstate*
+
+# Ignore Airflow logs and environment variables
+logs/
+.env
