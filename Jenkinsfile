@@ -12,7 +12,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/irshad-devops/devops-dataopd.git'
+                git branch: 'main', url: 'https://github.com/irshad-devops/devops-dataops.git'
             }
         }
 
@@ -22,13 +22,13 @@ pipeline {
                     sh 'mkdir -p ${TF_PLUGIN_CACHE_DIR}'
                     
                     // Temporarily copy the secret key into the terraform folder for the run
-                    sh "cp ${GCP_KEY} ./marwat-project-key.json"
+                    sh "cp ${GCP_KEY} ./gcp-key.json"
                     
                     sh 'terraform init -input=false -no-color'
                     sh 'terraform apply -auto-approve -input=false'
                     
                     // Clean up the key immediately after apply for security
-                    sh "rm ./marwat-project-key.json"
+                    sh "rm ./gcp-key.json"
                 }
             }
         }
