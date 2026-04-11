@@ -12,7 +12,7 @@ pipeline {
         
         // Security & Quality Config
         VAULT_TOKEN = "root" 
-        AIRFLOW_WORKER_CONTAINER = "air-flow-airflow-worker-1"
+        AIRFLOW_WORKER_CONTAINER = "air-flow_airflow-worker_1"
     }
 
     stages {
