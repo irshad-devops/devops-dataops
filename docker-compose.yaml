@@ -38,8 +38,7 @@ x-airflow-common:
     # --- SECURITY & VAULT BACKEND ---
     # Requirement: Encrypt data/secrets via Vault
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "hvs.PASTE_YOUR_ACTUAL_TOKEN_HERE", "mount_point": "secret"}'
-    
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'  
     _PIP_ADDITIONAL_REQUIREMENTS: ""
 
   volumes:
