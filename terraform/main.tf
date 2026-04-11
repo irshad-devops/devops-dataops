@@ -11,7 +11,7 @@ resource "google_kms_key_ring" "key_ring" {
 }
 
 resource "google_kms_crypto_key" "flight_key" {
-  name            = "flight-data-encryption-key"
+  name            = "flight-data-encryption-key2"
   key_ring        = google_kms_key_ring.key_ring.id
   rotation_period = "7776000s" # 90 days rotation for compliance
 
