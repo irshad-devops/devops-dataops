@@ -2,31 +2,23 @@ pipeline {
     agent any
 
     environment {
-        // Path to your project directory on the host
         DEPLOY_PATH = "/home/marwat/Documents/gcp-lab/Air-flow"
-        
-        // Infrastructure Variables
         TF_PLUGIN_CACHE_DIR = "${WORKSPACE}/.terraform.d/plugin-cache"
         GCP_KEY = credentials('gcp-key-secret')
         DB_PASSWORD = "MarwatSecurePass123!" 
-        
-        // Security & Quality Config
         VAULT_TOKEN = "root" 
-        AIRFLOW_WORKER_CONTAINER = "air-flow_airflow-worker_1"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Ensure the latest code is pulled from your repository
                 git branch: 'main', url: 'https://github.com/irshad-devops/devops-dataops.git'
             }
         }
 
         stage('Security & Secrets (Vault)') {
             steps {
-                echo 'Checking Vault status for SOC 2 Compliance...'
-                // Verifies the Vault container is ready to manage secrets
+                echo 'Checking Vault status...'
                 sh "curl -H 'X-Vault-Token: ${VAULT_TOKEN}' http://localhost:8200/v1/sys/health || true"
             }
         }
@@ -34,63 +26,57 @@ pipeline {
         stage('Infrastructure (Multi-Cloud IaC)') {
             steps {
                 dir('terraform') {
+                    // FORCE CLEANUP: Remove old key if it exists to avoid 'Permission Denied'
+                    sh 'rm -f ./gcp-key.json' 
                     sh 'mkdir -p ${TF_PLUGIN_CACHE_DIR}'
                     sh 'cp "${GCP_KEY}" ./gcp-key.json'
                     
-                    echo 'Initializing Terraform for GCP, AWS, and Azure...'
                     sh 'terraform init -input=false -no-color'
-                    
-                    echo 'Applying Multi-Cloud infrastructure with KMS encryption...'
                     sh 'terraform apply -auto-approve -input=false -var="db_password=${DB_PASSWORD}"'
                     
-                    sh 'rm ./gcp-key.json'
+                    sh 'rm -f ./gcp-key.json'
                 }
             }
         }
 
         stage('Deploy to Airflow') {
             steps {
-                // Prepare application directories
                 sh "mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/"
-                
-                // Copy Dags, Spark scripts, and Great Expectations configs
                 sh "cp -r dags/* ${DEPLOY_PATH}/dags/"
                 sh "cp -r scripts/* ${DEPLOY_PATH}/scripts/"
+                // Clean and copy key to the Airflow config directory
+                sh "rm -f ${DEPLOY_PATH}/config/gcp-key.json"
                 sh 'cp "${GCP_KEY}" ' + "${DEPLOY_PATH}/config/gcp-key.json"
-                
-                echo 'Application code and compliance scripts deployed.'
             }
         }
 
         stage('Start Orchestration Stack') {
             steps {
-                echo 'Launching Airflow, Superset, Loki, and Grafana...'
-                // Fulfills the "Observability and Visualization" stack requirement
                 sh "docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d"
-                
-                // Give services a moment to warm up
-                sleep 10
+                sleep 15 // Increased slightly to ensure worker is fully up
             }
         }
 
         stage('DataOps Quality Gate') {
             steps {
-                echo 'Running Automated Validation with Great Expectations...'
-                /* This is the CRITICAL DataOps step. 
-                   It executes the GX validation script inside the running Airflow worker.
-                   If the data doesn't meet quality standards, the pipeline fails.
-                */
-                sh "docker exec ${AIRFLOW_WORKER_CONTAINER} python3 /opt/airflow/scripts/validate_flights.py"
+                script {
+                    echo 'Finding Airflow Worker Container dynamically...'
+                    // This command finds the container ID for the worker regardless of name (hyphen vs underscore)
+                    def worker_id = sh(script: "docker ps -qf 'name=airflow-worker' | head -n 1", returnStdout: true).trim()
+                    
+                    if (worker_id) {
+                        echo "Targeting Container ID: ${worker_id}"
+                        sh "docker exec ${worker_id} python3 /opt/airflow/scripts/validate_flights.py"
+                    } else {
+                        error "FAIL: Airflow Worker container not found. Check 'docker ps' manually."
+                    }
+                }
             }
         }
     }
 
     post {
-        success {
-            echo '✅ SUCCESS: Multi-Cloud Infra Ready, Secrets Secured, and Quality Gate Passed!'
-        }
-        failure {
-            echo '❌ FAILURE: Pipeline failed. Check Great Expectations results or Docker logs.'
-        }
+        success { echo '✅ SUCCESS: Pipeline Completed!' }
+        failure { echo '❌ FAILURE: Check logs for permission or validation errors.' }
     }
 }
