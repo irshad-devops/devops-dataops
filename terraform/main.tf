@@ -6,7 +6,7 @@
 
 # --- 1. SECURITY: GCP KMS (Encryption at Rest) ---
 resource "google_kms_key_ring" "key_ring" {
-  name     = "marwat-flight-keyring"
+  name     = "marwat-flight-keyring2"
   location = var.region
 }
 
