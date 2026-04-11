@@ -37,3 +37,5 @@ terraform/*.tfstate*
 # Ignore Airflow logs and environment variables
 logs/
 .env
+
+terraform/gcp-key.json

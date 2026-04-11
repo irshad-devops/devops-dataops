@@ -2,6 +2,6 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'statsd-exporter'
+  - job_name: 'airflow'
     static_configs:
-      - targets: ['statsd-exporter:9102'] # Airflow exposes metrics here in newer versions
+      - targets: ['statsd-exporter:9102']

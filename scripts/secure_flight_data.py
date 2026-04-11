@@ -6,11 +6,20 @@ from pyspark.sql.functions import col, sha2
 # -----------------------------
 BUCKET = "secure-flight-data"
 
+# --- DATABASE CONFIG (Update with your Cloud SQL Public IP) ---
+DB_URL = "jdbc:postgresql://34.71.154.242:5432/flight_analytics"
+DB_PROPERTIES = {
+    "user": "dbadmin",
+    "password": "your_db_password", # Use the password from your terraform variables
+    "driver": "org.postgresql.Driver"
+}
+
 # -----------------------------
 # 1. Start Spark Session
 # -----------------------------
 spark = SparkSession.builder \
     .appName("GDPR_Compliance_Masking_GCP") \
+    .config("spark.jars", "/opt/airflow/drivers/postgresql-42.6.0.jar") \
     .getOrCreate()
 
 # -----------------------------
@@ -27,7 +36,7 @@ df = spark.read.csv(
 print("✅ Data loaded from GCS")
 
 # -----------------------------
-# 3. Mask Sensitive Data
+# 3. Mask Sensitive Data (GDPR Compliance)
 # -----------------------------
 secure_df = df.withColumn(
     "masked_destination",
@@ -37,7 +46,7 @@ secure_df = df.withColumn(
 print("🔐 Data anonymization complete")
 
 # -----------------------------
-# 4. GCC Filtering
+# 4. GCC Filtering (Localization Compliance)
 # -----------------------------
 gcc_countries = [
     "Saudi Arabia",
@@ -55,18 +64,32 @@ gcc_df = secure_df.filter(
 print("🌍 GCC filtering applied")
 
 # -----------------------------
-# 5. Save to GCS
+# 5. Save to Cloud SQL (Primary Implementation)
 # -----------------------------
-output_path = f"gs://{BUCKET}/secure_output/"
+# We write to PostgreSQL so Apache Superset can visualize the data easily.
+try:
+    gcc_df.write.jdbc(
+        url=DB_URL, 
+        table="processed_flight_data", 
+        mode="overwrite", 
+        properties=DB_PROPERTIES
+    )
+    print("✅ Data successfully pushed to Cloud SQL for Superset Visualization")
+except Exception as e:
+    print(f"❌ Error writing to Database: {e}")
 
+# -----------------------------
+# 6. Save to GCS (Commented out - kept for Data Lake proof)
+# -----------------------------
+"""
+output_path = f"gs://{BUCKET}/secure_output/"
 gcc_df.write \
     .mode("overwrite") \
     .parquet(output_path)
-
 print("✅ Data saved securely to GCS")
+"""
 
 # -----------------------------
-# 6. Stop Spark
+# 7. Stop Spark
 # -----------------------------
 spark.stop()
-
