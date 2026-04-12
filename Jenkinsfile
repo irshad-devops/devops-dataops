@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Path on the host machine where the stack resides
+        // Absolute path to your Airflow project directory
         DEPLOY_PATH = "/home/marwat/Documents/gcp-lab/Air-flow"
         TF_PLUGIN_CACHE_DIR = "${WORKSPACE}/.terraform.d/plugin-cache"
         GCP_KEY = credentials('gcp-key-secret')
@@ -13,7 +13,6 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Pulls code from your repository
                 git branch: 'main', url: 'https://github.com/irshad-devops/devops-dataops.git'
             }
         }
@@ -22,11 +21,10 @@ pipeline {
             steps {
                 dir('terraform') {
                     script {
-                        echo 'Starting Infrastructure Management...'
-                        sh 'rm -f ./gcp-key.json'
-                        sh 'cp "${GCP_KEY}" ./gcp-key.json'
+                        echo 'Checking Cloud Infrastructure...'
+                        sh 'rm -f ./gcp-key.json && cp "${GCP_KEY}" ./gcp-key.json'
                         
-                        // Handles network blips/DNS timeouts automatically
+                        // Retry logic handles the intermittent DNS timeouts
                         retry(2) {
                             sh 'terraform init -input=false -no-color'
                             sh 'terraform apply -auto-approve -input=false -var="db_password=${DB_PASSWORD}"'
@@ -40,27 +38,25 @@ pipeline {
         stage('Deploy & Fix Permissions') {
             steps {
                 script {
-                    echo 'Deploying DAGs and Scripts...'
-                    // Ensure the directory exists and the Jenkins user can write to it
-                    sh "sudo mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/"
-                    sh "sudo chown -R jenkins:jenkins ${DEPLOY_PATH}"
-                    
-                    // Copy files from Jenkins workspace to the Airflow deployment path
-                    sh "cp -r dags/* ${DEPLOY_PATH}/dags/"
-                    sh "cp -r scripts/* ${DEPLOY_PATH}/scripts/"
-                    
-                    // Securely move the GCP key for Airflow container use
-                    sh "rm -f ${DEPLOY_PATH}/config/gcp-key.json"
-                    sh 'cp "${GCP_KEY}" ' + "${DEPLOY_PATH}/config/gcp-key.json"
+                    echo 'Syncing files to local deployment path...'
+                    // Requires the visudo change mentioned above
+                    sh """
+                        sudo mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/
+                        sudo chown -R jenkins:jenkins ${DEPLOY_PATH}
+                        cp -r dags/* ${DEPLOY_PATH}/dags/
+                        cp -r scripts/* ${DEPLOY_PATH}/scripts/
+                        rm -f ${DEPLOY_PATH}/config/gcp-key.json
+                        cp "${GCP_KEY}" ${DEPLOY_PATH}/config/gcp-key.json
+                    """
                 }
             }
         }
 
         stage('Start Orchestration Stack') {
             steps {
-                // Launch the Docker containers in detached mode
+                echo 'Starting Docker containers...'
                 sh "docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d"
-                echo 'Waiting 20s for services (Vault/Postgres) to warm up...'
+                echo 'Waiting 20s for Vault and DB initialization...'
                 sleep 20 
             }
         }
@@ -68,15 +64,14 @@ pipeline {
         stage('Security & Secrets (Vault)') {
             steps {
                 script {
-                    echo 'Automating Secret Injection into Vault...'
-                    // Pass Vault Token/Addr as ENV vars to the 'docker exec' to prevent 403 Forbidden errors
+                    echo 'Injecting Airflow secrets into Vault...'
+                    // We explicitly pass VAULT_TOKEN to the container environment
                     sh """
                         docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault vault secrets enable -path=airflow kv-v2 || true
                         
                         docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault vault kv put airflow/connections/postgres_default \
                         conn_uri='postgresql://airflow:airflow@postgres:5432/airflow'
                     """
-                    echo '✅ Success: Connection string secured in HashiCorp Vault.'
                 }
             }
         }
@@ -84,14 +79,12 @@ pipeline {
         stage('DataOps Quality Gate') {
             steps {
                 script {
-                    echo 'Running Quality Gate Validation...'
-                    // Dynamically find the worker container to run the validation script
+                    echo 'Running data validation checks...'
                     def worker_id = sh(script: "docker ps -qf 'name=airflow-worker' | head -n 1", returnStdout: true).trim()
                     if (worker_id) {
-                        echo "Executing validation inside Container: ${worker_id}"
                         sh "docker exec ${worker_id} python3 /opt/airflow/scripts/validate_flights.py"
                     } else {
-                        error "CRITICAL: Airflow Worker container not found. Check Docker health."
+                        error "Airflow worker not found. Deployment might have failed."
                     }
                 }
             }
@@ -100,10 +93,10 @@ pipeline {
 
     post {
         success {
-            echo '🚀 SUCCESS: The entire DataOps pipeline is deployed, secured, and validated!'
+            echo '🚀 SUCCESS: Full DataOps lifecycle complete!'
         }
         failure {
-            echo '❌ FAILURE: Pipeline failed. Check the logs above for permission or connection errors.'
+            echo '❌ FAILURE: Check logs. If "sudo" failed, remember to run visudo on the host.'
         }
     }
 }
