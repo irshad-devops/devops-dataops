@@ -18,22 +18,29 @@ pipeline {
 
         stage('Security & Secrets (Vault)') {
             steps {
-                echo 'Checking Vault status...'
-                sh "curl -H 'X-Vault-Token: ${VAULT_TOKEN}' http://localhost:8200/v1/sys/health || true"
+                script {
+                    echo 'Provisioning Secrets in Vault...'
+                    // 1. Enable KV engine (ignores error if already enabled)
+                    sh "docker exec airflow-vault vault secrets enable -path=airflow kv-v2 || true"
+                    
+                    // 2. Automatically seed the Postgres Connection URI
+                    sh """
+                        docker exec airflow-vault vault kv put airflow/connections/postgres_default \
+                        conn_uri='postgresql://airflow:airflow@postgres:5432/airflow'
+                    """
+                    echo '✅ Success: postgres_default connection stored in Vault.'
+                }
             }
         }
 
         stage('Infrastructure (Multi-Cloud IaC)') {
             steps {
                 dir('terraform') {
-                    // FORCE CLEANUP: Remove old key if it exists to avoid 'Permission Denied'
                     sh 'rm -f ./gcp-key.json' 
                     sh 'mkdir -p ${TF_PLUGIN_CACHE_DIR}'
                     sh 'cp "${GCP_KEY}" ./gcp-key.json'
-                    
                     sh 'terraform init -input=false -no-color'
                     sh 'terraform apply -auto-approve -input=false -var="db_password=${DB_PASSWORD}"'
-                    
                     sh 'rm -f ./gcp-key.json'
                 }
             }
@@ -44,7 +51,6 @@ pipeline {
                 sh "mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/"
                 sh "cp -r dags/* ${DEPLOY_PATH}/dags/"
                 sh "cp -r scripts/* ${DEPLOY_PATH}/scripts/"
-                // Clean and copy key to the Airflow config directory
                 sh "rm -f ${DEPLOY_PATH}/config/gcp-key.json"
                 sh 'cp "${GCP_KEY}" ' + "${DEPLOY_PATH}/config/gcp-key.json"
             }
@@ -53,22 +59,19 @@ pipeline {
         stage('Start Orchestration Stack') {
             steps {
                 sh "docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d"
-                sleep 15 // Increased slightly to ensure worker is fully up
+                sleep 15 
             }
         }
 
         stage('DataOps Quality Gate') {
             steps {
                 script {
-                    echo 'Finding Airflow Worker Container dynamically...'
-                    // This command finds the container ID for the worker regardless of name (hyphen vs underscore)
+                    echo 'Finding Airflow Worker Container...'
                     def worker_id = sh(script: "docker ps -qf 'name=airflow-worker' | head -n 1", returnStdout: true).trim()
-                    
                     if (worker_id) {
-                        echo "Targeting Container ID: ${worker_id}"
                         sh "docker exec ${worker_id} python3 /opt/airflow/scripts/validate_flights.py"
                     } else {
-                        error "FAIL: Airflow Worker container not found. Check 'docker ps' manually."
+                        error "FAIL: Airflow Worker container not found."
                     }
                 }
             }
@@ -76,7 +79,7 @@ pipeline {
     }
 
     post {
-        success { echo '✅ SUCCESS: Pipeline Completed!' }
-        failure { echo '❌ FAILURE: Check logs for permission or validation errors.' }
+        success { echo ' SUCCESS: Pipeline Completed & Secrets Secured!' }
+        failure { echo ' FAILURE: Check logs for permission or Vault errors.' }
     }
 }

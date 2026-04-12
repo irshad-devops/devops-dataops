@@ -24,23 +24,16 @@ x-airflow-common:
     _AIRFLOW_WWW_USER_FIRSTNAME: 'Marwat'
     _AIRFLOW_WWW_USER_LASTNAME: 'Lab'
     _AIRFLOW_WWW_USER_EMAIL: 'admin@example.com'
-    # --- METRICS & OBSERVABILITY ---
     AIRFLOW__METRICS__STATSD_ON: 'True'
     AIRFLOW__METRICS__STATSD_HOST: 'statsd-exporter'
     AIRFLOW__METRICS__STATSD_PORT: '9125'
     AIRFLOW__METRICS__STATSD_PREFIX: 'airflow'
-    
-    # --- BIG DATA & SPARK CONFIG ---
     SPARK_HOME: /opt/spark
     JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
     PATH: /home/airflow/.local/bin:/opt/spark/bin:/opt/spark/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    
-    # --- SECURITY & VAULT BACKEND ---
-    # Requirement: Encrypt data/secrets via Vault
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'  
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'  
     _PIP_ADDITIONAL_REQUIREMENTS: ""
-
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -79,7 +72,6 @@ services:
       interval: 10s
     restart: always
 
-  # --- SECURITY: HashiCorp Vault ---
   vault:
     image: hashicorp/vault:1.13.3
     container_name: airflow-vault
@@ -92,7 +84,6 @@ services:
       - IPC_LOCK
     restart: always
 
-  # --- OBSERVABILITY: Prometheus, Loki, Grafana ---
   prometheus:
     image: prom/prometheus:latest
     container_name: airflow-prometheus
@@ -126,7 +117,6 @@ services:
       - "9125:9125/udp"
       - "9102:9102"
 
-  # --- VISUALIZATION: Apache Superset ---
   superset:
     image: apache/superset:latest
     container_name: airflow-superset
@@ -137,12 +127,25 @@ services:
     user: "root"
     entrypoint: >
       /bin/sh -c "
+      pip install psycopg2-binary;
       superset db upgrade;
       superset fab create-admin --username admin --firstname admin --lastname admin --email admin@fab.org --password admin;
       superset init;
       /usr/bin/run-server.sh"
     depends_on:
       - postgres
+  
+  # Add this service to your "services:" section in the docker-compose.yaml
+  fluent-bit:
+    image: fluent/fluent-bit:latest
+    container_name: airflow-fluent-bit
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs:ro
+    depends_on:
+      - loki
+    user: "0:0" # Needs root to read logs created by airflow
+    restart: always
 
   # --- AIRFLOW CORE SERVICES ---
   airflow-scheduler:

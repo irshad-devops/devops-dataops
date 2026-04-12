@@ -1,0 +1,6 @@
+FROM apache/superset:latest
+
+USER root
+# Install the driver in the system python or the default superset env
+RUN pip install psycopg2-binary
+USER superset

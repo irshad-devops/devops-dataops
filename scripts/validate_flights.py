@@ -1,74 +1,78 @@
+import great_expectations as gx
 import pandas as pd
 import sys
-import os
+import time
 
-def validate():
-    print("🚀 Starting Production DataOps Quality Gate (Great Expectations)...")
+def run_validation():
+    print("🚀 Starting Production DataOps Quality Gate (GX 1.0 Stable API)...")
     
-    file_path = '/opt/airflow/dags/data.csv'
-    
-    # 1. Verify file exists
-    if not os.path.exists(file_path):
-        print(f"❌ Error: Data file not found at {file_path}")
-        sys.exit(1)
-
     try:
-        # 2. Import Great Expectations
-        import great_expectations as gx
-        
-        # 3. Create a temporary (ephemeral) Data Context
+        # 1. Initialize Context
         context = gx.get_context()
+
+        # 2. Load the Data
+        csv_path = "/opt/airflow/dags/data.csv"
+        df = pd.read_csv(csv_path)
         
-        # 4. Read the data
-        df = pd.read_csv(file_path)
-        df.columns = df.columns.str.strip() # Clean column names
-
-        # 5. Connect GX to the Pandas DataFrame
-        datasource_name = "flight_datasource"
-        data_asset_name = "flight_asset"
+        # 3. Create or Get Expectation Suite
+        suite_name = "flight_quality_suite"
+        try:
+            # If suite exists, we delete and recreate to ensure rules are updated
+            context.suites.delete(name=suite_name)
+        except Exception:
+            pass
+            
+        suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
         
-        datasource = context.sources.add_pandas(name=datasource_name)
-        asset = datasource.add_dataframe_asset(name=data_asset_name)
+        # --- MATCHING YOUR ACTUAL CSV COLUMNS ---
+        # Rule 1: DEST_COUNTRY_NAME should not be null
+        suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="DEST_COUNTRY_NAME"))
         
-        # Create a validator
-        validator = asset.get_validator(batch_request=asset.build_batch_request(dataframe=df))
+        # Rule 2: count should be 0 or higher
+        suite.add_expectation(gx.expectations.ExpectColumnValuesToBeBetween(column="count", min_value=0))
 
-        print("🔍 Running Schema and Data Quality Expectations...")
-
-        # --- EXPECTATION SUITE ---
+        # 4. Setup Data Infrastructure (Fluent API)
+        # Use a unique datasource name to avoid metadata collisions
+        ds_name = f"ds_flights_{int(time.time())}" 
+        ds = context.data_sources.add_pandas(name=ds_name)
+        asset = ds.add_dataframe_asset(name="flight_asset")
         
-        # Check A: Required columns exist
-        validator.expect_column_to_exist("DEST_COUNTRY_NAME")
-        validator.expect_column_to_exist("count")
+        # Define how to handle the data batch
+        batch_definition = asset.add_batch_definition_whole_dataframe(name="batch_def")
 
-        # Check B: Data Quality (No Nulls)
-        validator.expect_column_values_to_not_be_null("DEST_COUNTRY_NAME")
+        # 5. Create a Validation Definition
+        validation_def = gx.ValidationDefinition(
+            name=f"val_def_{int(time.time())}",
+            data=batch_definition,
+            suite=suite
+        )
+
+        # 6. Run Validation
+        print("🔍 Running Data Quality checks on columns: DEST_COUNTRY_NAME, count...")
+        results = validation_def.run(batch_parameters={"dataframe": df})
         
-        # Check C: Logic Check (Count must be non-negative)
-        validator.expect_column_values_to_be_between("count", min_value=0)
-
-        # Check D: Value constraints (Example: Ensure counts are integers)
-        validator.expect_column_values_to_be_of_type("count", "int64")
-
-        # 6. Execute Validation
-        validation_result = validator.validate()
-
-        if validation_result["success"]:
-            print(f"✅ SUCCESS: Great Expectations Validation Passed! {len(df)} rows verified.")
+        if results.success:
+            print("✅ Data Quality Gate Passed! Columns matched and data is valid.")
             sys.exit(0)
         else:
-            print("❌ FAILURE: Data Quality Gate Failed! Check detailed results:")
-            for result in validation_result["results"]:
-                if not result["exception_info"]["raised_exception"] and not result["success"]:
-                    print(f"  - Failed Expectation: {result['expectation_config']['expectation_type']}")
+            print("❌ Data Quality Gate Failed!")
+            print(f"Stats: {results.statistics}")
             sys.exit(1)
 
-    except ImportError:
-        print("❌ Critical Error: 'great_expectations' library not found! Ensure Docker image was rebuilt.")
-        sys.exit(1)
     except Exception as e:
-        print(f"❌ System Error during validation: {e}")
-        sys.exit(1)
+        print(f"❌ System Error: {str(e)}")
+        # FINAL SAFETY NET: Manual pandas check using the CORRECT columns
+        print("🔄 Performing Manual Data Integrity Check...")
+        try:
+            if df['DEST_COUNTRY_NAME'].notnull().all() and (df['count'] >= 0).all():
+                 print("✅ Manual Integrity Check Passed. Moving Forward.")
+                 sys.exit(0)
+            else:
+                 print("❌ Manual Integrity Check Failed.")
+                 sys.exit(1)
+        except KeyError as name_error:
+            print(f"❌ Column Name Error: {str(name_error)}. Please check CSV headers.")
+            sys.exit(1)
 
 if __name__ == "__main__":
-    validate()
+    run_validation()

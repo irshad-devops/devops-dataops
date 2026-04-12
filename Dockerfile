@@ -3,7 +3,6 @@ FROM apache/airflow:2.7.1
 USER root
 
 # 1. Install Java (OpenJDK 17), build-essentials, and system utilities
-# Added: libpq-dev (for Postgres/Cloud SQL) and build-essential
 RUN apt-get update && apt-get install -y \
     openjdk-17-jdk \
     procps \
@@ -33,20 +32,27 @@ USER airflow
 # 5. Upgrade pip
 RUN pip install --upgrade pip
 
-# 6. Install Python Dependencies
-# Added: cloud-sql-python-connector, psycopg2 (for DB), and google-cloud-kms (for security)
-RUN pip install --no-cache-dir \
+# 6. SECTION A: Core Heavy Data Tools (Checkpoint 1)
+# These will be cached once they download successfully
+RUN pip install --no-cache-dir --default-timeout=1000 \
     pyspark==3.4.1 \
-    great_expectations \
     pandas \
-    psycopg2-binary \
+    psycopg2-binary
+
+# 7. SECTION B: Data Quality & Cloud Connectors (Checkpoint 2)
+# If Section C fails, Docker starts back here, NOT from the beginning
+RUN pip install --no-cache-dir --default-timeout=1000 \
+    great_expectations \
     cloud-sql-python-connector \
     google-cloud-storage \
-    google-cloud-kms \
+    google-cloud-kms
+
+# 8. SECTION C: Airflow Providers (Final Section)
+RUN pip install --no-cache-dir --default-timeout=1000 \
     apache-airflow-providers-hashicorp \
     apache-airflow-providers-google \
     apache-airflow-providers-amazon \
     apache-airflow-providers-microsoft-azure
 
-# 7. Pre-set Great Expectations config directory (Optional but helpful)
+# 9. Pre-set Great Expectations config directory
 ENV GX_HOME=/opt/airflow/gx

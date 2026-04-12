@@ -6,11 +6,14 @@ from pyspark.sql.functions import col, sha2
 # -----------------------------
 BUCKET = "secure-flight-data"
 
-# --- DATABASE CONFIG (Update with your Cloud SQL Public IP) ---
-DB_URL = "jdbc:postgresql://34.71.154.242:5432/flight_analytics"
+# --- DATABASE CONFIG (Matches your docker-compose.yaml) ---
+# Host: air-flow-postgres-1 (from docker ps) or simply 'postgres' (from yaml service name)
+# Database: airflow (from POSTGRES_DB: airflow)
+DB_URL = "jdbc:postgresql://postgres:5432/airflow"
+
 DB_PROPERTIES = {
-    "user": "dbadmin",
-    "password": "your_db_password", # Use the password from your terraform variables
+    "user": "airflow",         # from POSTGRES_USER
+    "password": "airflow",     # from POSTGRES_PASSWORD
     "driver": "org.postgresql.Driver"
 }
 
@@ -64,32 +67,21 @@ gcc_df = secure_df.filter(
 print("🌍 GCC filtering applied")
 
 # -----------------------------
-# 5. Save to Cloud SQL (Primary Implementation)
+# 5. Save to Postgres (Primary Implementation)
 # -----------------------------
-# We write to PostgreSQL so Apache Superset can visualize the data easily.
 try:
+    # We use overwrite to refresh the table on every run
     gcc_df.write.jdbc(
         url=DB_URL, 
         table="processed_flight_data", 
         mode="overwrite", 
         properties=DB_PROPERTIES
     )
-    print("✅ Data successfully pushed to Cloud SQL for Superset Visualization")
+    print("✅ Data successfully pushed to Postgres for Superset Visualization")
 except Exception as e:
     print(f"❌ Error writing to Database: {e}")
 
 # -----------------------------
-# 6. Save to GCS (Commented out - kept for Data Lake proof)
-# -----------------------------
-"""
-output_path = f"gs://{BUCKET}/secure_output/"
-gcc_df.write \
-    .mode("overwrite") \
-    .parquet(output_path)
-print("✅ Data saved securely to GCS")
-"""
-
-# -----------------------------
-# 7. Stop Spark
+# 6. Stop Spark
 # -----------------------------
 spark.stop()
