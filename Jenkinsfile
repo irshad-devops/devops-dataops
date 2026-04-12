@@ -37,7 +37,6 @@ pipeline {
             steps {
                 script {
                     echo 'Syncing files to local deployment path...'
-                    // Sudo removed because permissions were fixed manually on the host
                     sh """
                         mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/
                         cp -r dags/* ${DEPLOY_PATH}/dags/
@@ -76,8 +75,15 @@ pipeline {
             steps {
                 script {
                     echo 'Running data validation checks...'
+                    // Find the worker container ID
                     def worker_id = sh(script: "docker ps -qf 'name=airflow-worker' | head -n 1", returnStdout: true).trim()
+                    
                     if (worker_id) {
+                        echo "Container Found: ${worker_id}. Installing dependencies..."
+                        // Fix the 'ModuleNotFoundError' by installing great_expectations on the fly
+                        sh "docker exec ${worker_id} pip install great_expectations"
+                        
+                        echo "Executing validation script..."
                         sh "docker exec ${worker_id} python3 /opt/airflow/scripts/validate_flights.py"
                     } else {
                         error "Airflow worker not found. Deployment might have failed."
