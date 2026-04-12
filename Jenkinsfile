@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // Absolute path to your Airflow project directory
         DEPLOY_PATH = "/home/marwat/Documents/gcp-lab/Air-flow"
         TF_PLUGIN_CACHE_DIR = "${WORKSPACE}/.terraform.d/plugin-cache"
         GCP_KEY = credentials('gcp-key-secret')
@@ -24,7 +23,6 @@ pipeline {
                         echo 'Checking Cloud Infrastructure...'
                         sh 'rm -f ./gcp-key.json && cp "${GCP_KEY}" ./gcp-key.json'
                         
-                        // Retry logic handles the intermittent DNS timeouts
                         retry(2) {
                             sh 'terraform init -input=false -no-color'
                             sh 'terraform apply -auto-approve -input=false -var="db_password=${DB_PASSWORD}"'
@@ -35,14 +33,13 @@ pipeline {
             }
         }
 
-        stage('Deploy & Fix Permissions') {
+        stage('Deploy & Sync') {
             steps {
                 script {
                     echo 'Syncing files to local deployment path...'
-                    // Requires the visudo change mentioned above
+                    // Sudo removed because permissions were fixed manually on the host
                     sh """
-                        sudo mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/
-                        sudo chown -R jenkins:jenkins ${DEPLOY_PATH}
+                        mkdir -p ${DEPLOY_PATH}/dags/ ${DEPLOY_PATH}/scripts/ ${DEPLOY_PATH}/config/
                         cp -r dags/* ${DEPLOY_PATH}/dags/
                         cp -r scripts/* ${DEPLOY_PATH}/scripts/
                         rm -f ${DEPLOY_PATH}/config/gcp-key.json
@@ -65,7 +62,6 @@ pipeline {
             steps {
                 script {
                     echo 'Injecting Airflow secrets into Vault...'
-                    // We explicitly pass VAULT_TOKEN to the container environment
                     sh """
                         docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault vault secrets enable -path=airflow kv-v2 || true
                         
@@ -96,7 +92,7 @@ pipeline {
             echo '🚀 SUCCESS: Full DataOps lifecycle complete!'
         }
         failure {
-            echo '❌ FAILURE: Check logs. If "sudo" failed, remember to run visudo on the host.'
+            echo '❌ FAILURE: Check logs. Ensure the Jenkins user has access to the DEPLOY_PATH.'
         }
     }
 }
