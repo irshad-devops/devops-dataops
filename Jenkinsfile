@@ -57,19 +57,19 @@ pipeline {
             }
         }
 
-        stage('Security & Secrets (Vault)') {
+        stage('Store Secrets in Vault') {
             steps {
                 script {
-                    echo 'Injecting Airflow secrets into Vault...'
+                    echo 'Storing DB credentials in Vault...'
                     sh """
-                        docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault vault secrets enable -path=airflow kv-v2 || true
-                        
-                        docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault vault kv put airflow/connections/postgres_default \
-                        conn_uri='postgresql://airflow:airflow@postgres:5432/airflow'
+                    docker exec -e VAULT_TOKEN=${VAULT_TOKEN} -e VAULT_ADDR='http://127.0.0.1:8200' airflow-vault \
+                    vault kv put airflow/connections/postgres_default \
+                    conn_uri='postgresql://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow'
                     """
                 }
             }
         }
+
 
         stage('DataOps Quality Gate') {
             steps {
