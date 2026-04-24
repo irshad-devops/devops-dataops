@@ -70,7 +70,6 @@ pipeline {
             }
         }
 
-
         stage('DataOps Quality Gate') {
             steps {
                 script {
