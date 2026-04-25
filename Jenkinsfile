@@ -15,7 +15,7 @@ pipeline {
             }
         }
 
-        // ------------------ INFRA ------------------
+        // ------------------ INFRA (Terraform) ------------------
         stage('Infrastructure (IaC)') {
             steps {
                 dir('terraform') {
@@ -41,7 +41,7 @@ pipeline {
             }
         }
 
-        // ------------------ DEPLOY ------------------
+        // ------------------ DEPLOY FILES ------------------
         stage('Deploy Files') {
             steps {
                 script {
@@ -49,9 +49,9 @@ pipeline {
                         file(credentialsId: 'gcp-key-secret', variable: 'GCP_KEY')
                     ]) {
                         sh """
-                            mkdir -p ${DEPLOY_PATH}/dags/ \
-                                     ${DEPLOY_PATH}/scripts/ \
-                                     ${DEPLOY_PATH}/config/
+                            mkdir -p ${DEPLOY_PATH}/dags \
+                                     ${DEPLOY_PATH}/scripts \
+                                     ${DEPLOY_PATH}/config
 
                             cp -r dags/* ${DEPLOY_PATH}/dags/
                             cp -r scripts/* ${DEPLOY_PATH}/scripts/
@@ -73,24 +73,27 @@ pipeline {
                     ]) {
 
                         sh """
+                            set -e
+
                             export DB_PASSWORD=${DB_PASSWORD}
 
                             docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml down -v || true
                             docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d
                         """
                     }
-
-                    sh '''
-                        echo "Waiting for Airflow..."
-                        until curl -s http://localhost:8080/health | grep '"metadatabase": {"status": "healthy"}'; do
-                            sleep 5
-                        done
-                    '''
                 }
+
+                // Wait for Airflow
+                sh '''
+                    echo "Waiting for Airflow..."
+                    until curl -s http://localhost:8080/health | grep '"metadatabase": {"status": "healthy"}'; do
+                        sleep 5
+                    done
+                '''
             }
         }
 
-        // ------------------ VAULT ------------------
+        // ------------------ VAULT SECRETS ------------------
         stage('Vault Secrets') {
             steps {
                 script {
@@ -98,10 +101,11 @@ pipeline {
                         string(credentialsId: 'vault-root-token', variable: 'VAULT_TOKEN'),
                         string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
                     ]) {
+
                         sh '''
                             docker exec airflow-vault sh -c "
-                                export VAULT_TOKEN=$VAULT_TOKEN &&
                                 export VAULT_ADDR=http://127.0.0.1:8200 &&
+                                export VAULT_TOKEN=$VAULT_TOKEN &&
 
                                 vault secrets enable -path=airflow kv-v2 || true &&
 
@@ -114,7 +118,7 @@ pipeline {
             }
         }
 
-        // ------------------ QUALITY ------------------
+        // ------------------ QUALITY GATE ------------------
         stage('Quality Gate') {
             steps {
                 script {
@@ -138,10 +142,10 @@ pipeline {
 
     post {
         success {
-            echo '🚀 SUCCESS: Pipeline completed!'
+            echo "🚀 SUCCESS: Pipeline completed!"
         }
         failure {
-            echo '❌ FAILURE: Check logs'
+            echo "❌ FAILURE: Check logs"
         }
     }
 }
