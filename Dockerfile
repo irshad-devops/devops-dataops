@@ -20,9 +20,10 @@ RUN wget https://archive.apache.org/dist/spark/spark-3.4.1/spark-3.4.1-bin-hadoo
     rm spark-3.4.1-bin-hadoop3.tgz
 
 # 3. Set Environment Variables for Spark and Java
+# We append to PATH instead of overwriting it to avoid breaking Airflow's internal paths
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV SPARK_HOME=/opt/spark
-ENV PATH="/home/airflow/.local/bin:$SPARK_HOME/bin:$JAVA_HOME/bin:$PATH"
+ENV PATH="$SPARK_HOME/bin:$JAVA_HOME/bin:$PATH"
 
 # 4. Set directory permissions
 RUN chown -R airflow: /opt/spark
@@ -32,27 +33,20 @@ USER airflow
 # 5. Upgrade pip
 RUN pip install --upgrade pip
 
-# 6. SECTION A: Core Heavy Data Tools (Checkpoint 1)
-# These will be cached once they download successfully
+# 6. Install Python Dependencies
+# Combined into fewer layers to optimize build time
 RUN pip install --no-cache-dir --default-timeout=1000 \
     pyspark==3.4.1 \
     pandas \
-    psycopg2-binary
-
-# 7. SECTION B: Data Quality & Cloud Connectors (Checkpoint 2)
-# If Section C fails, Docker starts back here, NOT from the beginning
-RUN pip install --no-cache-dir --default-timeout=1000 \
+    psycopg2-binary \
     great_expectations \
     cloud-sql-python-connector \
     google-cloud-storage \
-    google-cloud-kms
-
-# 8. SECTION C: Airflow Providers (Final Section)
-RUN pip install --no-cache-dir --default-timeout=1000 \
+    google-cloud-kms \
     apache-airflow-providers-hashicorp \
     apache-airflow-providers-google \
     apache-airflow-providers-amazon \
     apache-airflow-providers-microsoft-azure
 
-# 9. Pre-set Great Expectations config directory
+# 7. Pre-set Great Expectations config directory
 ENV GX_HOME=/opt/airflow/gx
