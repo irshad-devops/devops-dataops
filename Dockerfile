@@ -33,21 +33,21 @@ USER airflow
 RUN pip install --upgrade pip
 
 # 6. SECTION A: Core Heavy Data Tools (Checkpoint 1)
-# These will be cached once they download successfully
 RUN pip install --no-cache-dir --default-timeout=1000 \
     pyspark==3.4.1 \
     pandas \
     psycopg2-binary
 
 # 7. SECTION B: Data Quality & Cloud Connectors (Checkpoint 2)
-# If Section C fails, Docker starts back here, NOT from the beginning
+# Fix: Remove version constraint to avoid conflicts with Airflow's cryptography
 RUN pip install --no-cache-dir --default-timeout=1000 \
     great_expectations \
-    cloud-sql-python-connector \
+    "cloud-sql-python-connector<1.12.0" \
     google-cloud-storage \
     google-cloud-kms
 
 # 8. SECTION C: Airflow Providers (Final Section)
+# Note: Airflow core is already installed in the base image
 RUN pip install --no-cache-dir --default-timeout=1000 \
     apache-airflow-providers-hashicorp \
     apache-airflow-providers-google \
