@@ -29,8 +29,7 @@ RUN chown -R airflow: /opt/spark
 
 USER airflow
 
-# 5. Setup Constraints (The FIX for ModuleNotFoundError)
-# This prevents pip from breaking Airflow core while installing other tools
+# 5. Setup Constraints
 ARG AIRFLOW_VERSION=2.7.1
 ARG PYTHON_VERSION=3.8
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
@@ -39,6 +38,8 @@ RUN pip install --upgrade pip
 
 # 6. Install Python Dependencies WITH constraints
 RUN pip install --no-cache-dir --default-timeout=1000 \
+    "apache-airflow==${AIRFLOW_VERSION}" \
+    "cryptography>=42.0.0" \
     "pyspark==3.4.1" \
     "pandas" \
     "psycopg2-binary" \
