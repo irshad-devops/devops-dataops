@@ -20,7 +20,6 @@ RUN wget https://archive.apache.org/dist/spark/spark-3.4.1/spark-3.4.1-bin-hadoo
     rm spark-3.4.1-bin-hadoop3.tgz
 
 # 3. Set Environment Variables for Spark and Java
-# We append to PATH instead of overwriting it to avoid breaking Airflow's internal paths
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV SPARK_HOME=/opt/spark
 ENV PATH="$SPARK_HOME/bin:$JAVA_HOME/bin:$PATH"
@@ -30,23 +29,28 @@ RUN chown -R airflow: /opt/spark
 
 USER airflow
 
-# 5. Upgrade pip
+# 5. Setup Constraints (The FIX for ModuleNotFoundError)
+# This prevents pip from breaking Airflow core while installing other tools
+ARG AIRFLOW_VERSION=2.7.1
+ARG PYTHON_VERSION=3.8
+ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+
 RUN pip install --upgrade pip
 
-# 6. Install Python Dependencies
-# Combined into fewer layers to optimize build time
+# 6. Install Python Dependencies WITH constraints
 RUN pip install --no-cache-dir --default-timeout=1000 \
-    pyspark==3.4.1 \
-    pandas \
-    psycopg2-binary \
-    great_expectations \
-    cloud-sql-python-connector \
-    google-cloud-storage \
-    google-cloud-kms \
-    apache-airflow-providers-hashicorp \
-    apache-airflow-providers-google \
-    apache-airflow-providers-amazon \
-    apache-airflow-providers-microsoft-azure
+    "pyspark==3.4.1" \
+    "pandas" \
+    "psycopg2-binary" \
+    "great_expectations" \
+    "cloud-sql-python-connector>=1.12.1" \
+    "google-cloud-storage" \
+    "google-cloud-kms" \
+    "apache-airflow-providers-hashicorp" \
+    "apache-airflow-providers-google" \
+    "apache-airflow-providers-amazon" \
+    "apache-airflow-providers-microsoft-azure" \
+    --constraint "${CONSTRAINT_URL}"
 
 # 7. Pre-set Great Expectations config directory
 ENV GX_HOME=/opt/airflow/gx
