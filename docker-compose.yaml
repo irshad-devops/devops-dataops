@@ -5,24 +5,24 @@ x-airflow-common: &airflow-common
   environment:
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
 
-    # ✅ USE ENV VARIABLE (secure)
+    # ---------------- DATABASE ----------------
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
 
-    # Celery
+    # ---------------- CELERY ----------------
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
 
-    # Core
-    AIRFLOW__CORE__FERNET_KEY: 'S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA='
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    # ---------------- CORE ----------------
+    AIRFLOW__CORE__FERNET_KEY: "S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA="
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
 
-    # Admin
-    _AIRFLOW_WWW_USER_CREATE: 'true'
-    _AIRFLOW_WWW_USER_USERNAME: 'admin'
-    _AIRFLOW_WWW_USER_PASSWORD: 'admin'
+    # ---------------- ADMIN ----------------
+    _AIRFLOW_WWW_USER_CREATE: "true"
+    _AIRFLOW_WWW_USER_USERNAME: "admin"
+    _AIRFLOW_WWW_USER_PASSWORD: "admin"
 
-    # Vault
+    # ---------------- VAULT ----------------
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
     AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200"}'
 
