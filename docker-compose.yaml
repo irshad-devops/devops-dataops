@@ -1,199 +1,119 @@
-# ------------------------------------------------------------------------------
-# DataOps & DevOps Pipeline: Airflow, Spark, Vault, Loki, & Superset
-# Compliance: GDPR, ISO 27018, SOC 2, GCC Data Localization
-# ------------------------------------------------------------------------------
----
+version: "3.8"
+
 x-airflow-common:
   &airflow-common
   build: .
-  env_file:
-    - ${ENV_FILE_PATH:-.env}
   environment:
-    &airflow-common-env
+    &airflow-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+
+    # ❗ No hardcoded DB
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ""
+
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@cloudsql-proxy:5432/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+
     AIRFLOW__CORE__FERNET_KEY: 'S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA='
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    _AIRFLOW_WWW_USER_CREATE: 'true'
-    _AIRFLOW_WWW_USER_USERNAME: 'admin'
-    _AIRFLOW_WWW_USER_PASSWORD: 'admin'
-    _AIRFLOW_WWW_USER_ROLE: 'Admin'
-    _AIRFLOW_WWW_USER_FIRSTNAME: 'Marwat'
-    _AIRFLOW_WWW_USER_LASTNAME: 'Lab'
-    _AIRFLOW_WWW_USER_EMAIL: 'admin@example.com'
-    AIRFLOW__METRICS__STATSD_ON: 'True'
-    AIRFLOW__METRICS__STATSD_HOST: 'statsd-exporter'
-    AIRFLOW__METRICS__STATSD_PORT: '9125'
-    AIRFLOW__METRICS__STATSD_PREFIX: 'airflow'
-    SPARK_HOME: /opt/spark
-    JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-    PATH: /home/airflow/.local/bin:/opt/spark/bin:/opt/spark/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'  
-    _PIP_ADDITIONAL_REQUIREMENTS: ""
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'
+
   volumes:
-    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
-    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
-    - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
-    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
-    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    - /home/marwat/Documents/Apache-spark/spark:/opt/spark
-  user: "${AIRFLOW_UID:-50000}:0"
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts
+    - ./config:/opt/airflow/config
+
   depends_on:
-    &airflow-common-depends-on
     redis:
-      condition: service_healthy
-    postgres:
       condition: service_healthy
 
 services:
-  # --- INFRASTRUCTURE ---
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+
+  # 🔴 Cloud SQL Proxy (MAIN DB CONNECTION)
+  cloudsql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
+    container_name: cloudsql-proxy
+    command: >
+      --address 0.0.0.0
+      --port 5432
+      marwat-project:us-central1:flight-db-instance
+      --credentials-file=/config/gcp-key.json
     volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
-      interval: 10s
-      retries: 5
-    restart: always
+      - ./config/gcp-key.json:/config/gcp-key.json
+    ports:
+      - "5432:5432"
 
   redis:
-    image: redis:7.2-bookworm
+    image: redis:7.2
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-    restart: always
 
+  # 🔐 Vault (Persistent)
   vault:
     image: hashicorp/vault:1.13.3
     container_name: airflow-vault
     ports:
       - "8200:8200"
+    volumes:
+      - ./vault-data:/vault/file
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: "root"
-      VAULT_ADDR: "http://0.0.0.0:8200"
-    cap_add:
-      - IPC_LOCK
-    restart: always
+    command: >
+      vault server -dev
+      -dev-root-token-id=root
+      -dev-listen-address=0.0.0.0:8200
 
+  # 📊 Monitoring Stack
   prometheus:
-    image: prom/prometheus:latest
-    container_name: airflow-prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    image: prom/prometheus
     ports:
       - "9090:9090"
 
-  loki:
-    image: grafana/loki:latest
-    container_name: airflow-loki
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
   grafana:
-    image: grafana/grafana:latest
-    container_name: airflow-grafana
+    image: grafana/grafana
     ports:
       - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    depends_on:
-      - prometheus
-      - loki
 
-  statsd-exporter:
-    image: prom/statsd-exporter
-    container_name: airflow-statsd-exporter
+  loki:
+    image: grafana/loki
     ports:
-      - "9125:9125/udp"
-      - "9102:9102"
+      - "3100:3100"
 
+  # 📈 Superset
   superset:
-    image: apache/superset:latest
-    container_name: airflow-superset
+    image: apache/superset
     ports:
       - "8088:8088"
-    environment:
-      - SUPERSET_SECRET_KEY=marwat_dataops_secret
-    user: "root"
-    entrypoint: >
-      /bin/sh -c "
-      pip install psycopg2-binary;
-      superset db upgrade;
-      superset fab create-admin --username admin --firstname admin --lastname admin --email admin@fab.org --password admin;
-      superset init;
-      /usr/bin/run-server.sh"
-    depends_on:
-      - postgres
-  
-  # Add this service to your "services:" section in the docker-compose.yaml
-  fluent-bit:
-    image: fluent/fluent-bit:latest
-    container_name: airflow-fluent-bit
-    volumes:
-      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-      - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs:ro
-    depends_on:
-      - loki
-    user: "0:0" # Needs root to read logs created by airflow
-    restart: always
 
-  # --- AIRFLOW CORE SERVICES ---
-  airflow-scheduler:
-    <<: *airflow-common
-    command: scheduler
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
-
+  # 🚀 Airflow Services
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
 
   airflow-worker:
     <<: *airflow-common
     command: celery worker
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow info']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
 
   airflow-init:
     <<: *airflow-common
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
-        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/
-        airflow db migrate
-        airflow users create --username airflow --password airflow --firstname Marwat --lastname Admin --role Admin --email admin@example.com
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_MIGRATE: 'true'
-    user: "0:0"
+    entrypoint: bash
+    command: >
+      -c "
+      airflow db migrate &&
+      airflow users create \
+      --username admin \
+      --password admin \
+      --role Admin \
+      --email admin@example.com
+      "
 
 volumes:
-  postgres-db-volume:
+  vault-data:
