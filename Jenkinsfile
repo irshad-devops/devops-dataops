@@ -71,23 +71,38 @@ pipeline {
                     withCredentials([
                         string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
                     ]) {
-
                         sh """
                             set -e
-
                             export DB_PASSWORD=${DB_PASSWORD}
 
+                            # Clean up previous runs
                             docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml down -v || true
+
+                            # 1. INITIALIZE DATABASE FIRST
+                            # This ensures Cloud SQL tables are created before Webserver starts
+                            echo "Initializing Cloud SQL schema..."
+                            docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml run --rm airflow-init
+
+                            # 2. START THE FULL STACK
+                            echo "Starting Airflow services..."
                             docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d
                         """
                     }
                 }
 
-                // Wait for Airflow
+                // Wait for Airflow Webserver to pass health checks
                 sh '''
-                    echo "Waiting for Airflow..."
+                    echo "Waiting for Airflow health check..."
+                    MAX_RETRIES=30
+                    COUNT=0
                     until curl -s http://localhost:8080/health | grep '"metadatabase": {"status": "healthy"}'; do
-                        sleep 5
+                        if [ $COUNT -eq $MAX_RETRIES ]; then
+                            echo "Airflow failed to start in time"
+                            exit 1
+                        fi
+                        echo "Waiting... ($COUNT/$MAX_RETRIES)"
+                        sleep 10
+                        COUNT=$((COUNT+1))
                     done
                 '''
             }
@@ -101,7 +116,6 @@ pipeline {
                         string(credentialsId: 'vault-root-token', variable: 'VAULT_TOKEN'),
                         string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
                     ]) {
-
                         sh '''
                             docker exec airflow-vault sh -c "
                                 export VAULT_ADDR=http://127.0.0.1:8200 &&
@@ -142,10 +156,10 @@ pipeline {
 
     post {
         success {
-            echo "🚀 SUCCESS: Pipeline completed!"
+            echo "🚀 SUCCESS: Pipeline completed and Airflow is running!"
         }
         failure {
-            echo "❌ FAILURE: Check logs"
+            echo "❌ FAILURE: Pipeline failed. Check 'docker ps' and 'docker logs' on the runner."
         }
     }
 }
