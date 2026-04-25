@@ -2,63 +2,42 @@ version: "3.8"
 
 x-airflow-common: &airflow-common
   build: .
-  environment: &airflow-common-env
+  environment:
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
 
-    # ✅ Cloud SQL (Your Real DB)
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:MarwatSecurePass123!@34.69.30.163:5432/airflow
+    # ✅ USE ENV VARIABLE (secure)
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
 
-    # Celery Config
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:MarwatSecurePass123!@34.69.30.163:5432/airflow
+    # Celery
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:${DB_PASSWORD}@34.69.30.163:5432/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
 
-    # Core Config
+    # Core
     AIRFLOW__CORE__FERNET_KEY: 'S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA='
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
 
-    # Admin User
+    # Admin
     _AIRFLOW_WWW_USER_CREATE: 'true'
     _AIRFLOW_WWW_USER_USERNAME: 'admin'
     _AIRFLOW_WWW_USER_PASSWORD: 'admin'
-    _AIRFLOW_WWW_USER_ROLE: 'Admin'
 
-    # Metrics
-    AIRFLOW__METRICS__STATSD_ON: 'True'
-    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
-    AIRFLOW__METRICS__STATSD_PORT: 9125
-
-    # Spark
-    SPARK_HOME: /opt/spark
-
-    # ✅ Vault Integration
+    # Vault
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200"}'
 
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./scripts:/opt/airflow/scripts
     - ./config:/opt/airflow/config
-    - ./plugins:/opt/airflow/plugins
-
-  depends_on:
-    redis:
-      condition: service_healthy
-    vault:
-      condition: service_started
 
 services:
-
-  # ---------------- INFRA ----------------
 
   redis:
     image: redis:7
     restart: always
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
 
-  # ✅ FIXED VAULT (Persistent)
   vault:
     image: hashicorp/vault:1.13.3
     container_name: airflow-vault
@@ -66,64 +45,7 @@ services:
       - "8200:8200"
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: root
-      VAULT_ADDR: http://0.0.0.0:8200
     command: server -dev -dev-root-token-id=root
-    cap_add:
-      - IPC_LOCK
-    volumes:
-      - vault-data:/vault/file
-    restart: always
-
-  prometheus:
-    image: prom/prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-
-  loki:
-    image: grafana/loki
-    ports:
-      - "3100:3100"
-
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    depends_on:
-      - prometheus
-      - loki
-
-  statsd-exporter:
-    image: prom/statsd-exporter
-    ports:
-      - "9125:9125/udp"
-      - "9102:9102"
-
-  superset:
-    image: apache/superset:latest
-    ports:
-      - "8088:8088"
-    environment:
-      SUPERSET_SECRET_KEY: marwat_dataops_secret
-    command: >
-      /bin/sh -c "
-      pip install psycopg2-binary &&
-      superset db upgrade &&
-      superset fab create-admin --username admin --password admin --firstname admin --lastname admin --email admin@fab.org &&
-      superset init &&
-      superset run -p 8088 --host 0.0.0.0
-      "
-
-  fluent-bit:
-    image: fluent/fluent-bit
-    volumes:
-      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
-      - ./logs:/opt/airflow/logs
-
-  # ---------------- AIRFLOW ----------------
 
   airflow-init:
     <<: *airflow-common
@@ -134,8 +56,6 @@ services:
       airflow users create \
         --username admin \
         --password admin \
-        --firstname Marwat \
-        --lastname Admin \
         --role Admin \
         --email admin@example.com
       "
@@ -159,6 +79,3 @@ services:
     command: celery worker
     depends_on:
       - airflow-init
-
-volumes:
-  vault-data:
