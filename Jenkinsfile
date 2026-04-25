@@ -16,17 +16,14 @@ pipeline {
         }
 
         // ------------------ INFRA ------------------
-        stage('Infrastructure (Multi-Cloud IaC)') {
+        stage('Infrastructure (IaC)') {
             steps {
                 dir('terraform') {
                     script {
-                        echo 'Provisioning Cloud Infrastructure...'
-
                         withCredentials([
                             string(credentialsId: 'db-password', variable: 'DB_PASSWORD'),
                             file(credentialsId: 'gcp-key-secret', variable: 'GCP_KEY')
                         ]) {
-
                             sh '''
                                 rm -f gcp-key.json
                                 cp $GCP_KEY gcp-key.json
@@ -45,15 +42,12 @@ pipeline {
         }
 
         // ------------------ DEPLOY ------------------
-        stage('Deploy & Sync') {
+        stage('Deploy Files') {
             steps {
                 script {
-                    echo 'Syncing Airflow project...'
-
                     withCredentials([
                         file(credentialsId: 'gcp-key-secret', variable: 'GCP_KEY')
                     ]) {
-
                         sh """
                             mkdir -p ${DEPLOY_PATH}/dags/ \
                                      ${DEPLOY_PATH}/scripts/ \
@@ -71,19 +65,24 @@ pipeline {
         }
 
         // ------------------ START STACK ------------------
-        stage('Start Orchestration Stack') {
+        stage('Start Stack') {
             steps {
                 script {
-                    echo 'Starting Docker stack...'
+                    withCredentials([
+                        string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
+                    ]) {
 
-                    sh "docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d"
+                        sh """
+                            export DB_PASSWORD=${DB_PASSWORD}
 
-                    echo 'Waiting for services to stabilize...'
+                            docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml down -v || true
+                            docker-compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d
+                        """
+                    }
 
-                    // Better than fixed sleep
                     sh '''
-                        echo "Waiting for Airflow webserver..."
-                        until curl -s http://localhost:8080/health; do
+                        echo "Waiting for Airflow..."
+                        until curl -s http://localhost:8080/health | grep '"metadatabase": {"status": "healthy"}'; do
                             sleep 5
                         done
                     '''
@@ -91,17 +90,14 @@ pipeline {
             }
         }
 
-        // ------------------ VAULT SECRETS ------------------
-        stage('Store Secrets in Vault') {
+        // ------------------ VAULT ------------------
+        stage('Vault Secrets') {
             steps {
                 script {
-                    echo 'Storing secrets in Vault...'
-
                     withCredentials([
                         string(credentialsId: 'vault-root-token', variable: 'VAULT_TOKEN'),
                         string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
                     ]) {
-
                         sh '''
                             docker exec airflow-vault sh -c "
                                 export VAULT_TOKEN=$VAULT_TOKEN &&
@@ -118,22 +114,18 @@ pipeline {
             }
         }
 
-        // ------------------ QUALITY GATE ------------------
-        stage('DataOps Quality Gate') {
+        // ------------------ QUALITY ------------------
+        stage('Quality Gate') {
             steps {
                 script {
-                    echo 'Running validation pipeline...'
-
                     def worker_id = sh(
                         script: "docker ps -qf 'name=airflow-worker' | head -n 1",
                         returnStdout: true
                     ).trim()
 
                     if (!worker_id) {
-                        error "Airflow worker not found. Deployment failed."
+                        error "Airflow worker not found"
                     }
-
-                    echo "Worker container: ${worker_id}"
 
                     sh """
                         docker exec ${worker_id} pip install --quiet great_expectations
@@ -144,14 +136,12 @@ pipeline {
         }
     }
 
-    // ------------------ POST ACTIONS ------------------
     post {
         success {
-            echo '🚀 SUCCESS: Full DataOps pipeline completed successfully!'
+            echo '🚀 SUCCESS: Pipeline completed!'
         }
-
         failure {
-            echo '❌ FAILURE: Pipeline failed. Check logs for details.'
+            echo '❌ FAILURE: Check logs'
         }
     }
 }
