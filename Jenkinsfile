@@ -34,13 +34,34 @@ pipeline {
             }
         }
 
+        stage('Prepare Environment') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'db-password', variable: 'DB_PASS')
+                ]) {
+                    sh """
+                    mkdir -p ${DEPLOY_PATH}/config
+
+                    # Copy GCP key
+                    cp ${GCP_KEY} ${DEPLOY_PATH}/config/gcp-key.json
+                    chmod 644 ${DEPLOY_PATH}/config/gcp-key.json
+
+                    # Create .env file for Airflow DB
+                    cat <<EOF > ${DEPLOY_PATH}/.env
+AIRFLOW_DB=postgresql+psycopg2://postgres:${DB_PASS}@cloudsql-proxy:5432/airflow
+EOF
+                    """
+                }
+            }
+        }
+
         stage('Deploy Docker Stack') {
             steps {
                 sh """
-                docker compose -f ${DEPLOY_PATH}/docker-compose.yaml down
+                docker compose -f ${DEPLOY_PATH}/docker-compose.yaml down -v
                 docker compose -f ${DEPLOY_PATH}/docker-compose.yaml up -d --build
                 """
-                sleep 20
+                sleep 25
             }
         }
 
@@ -89,3 +110,4 @@ pipeline {
         }
     }
 }
+

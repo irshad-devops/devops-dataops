@@ -1,63 +1,34 @@
 version: "3.8"
 
-x-airflow-common:
-  &airflow-common
-  build: .
-  environment:
-    &airflow-env
-    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-
-    # ❗ No hardcoded DB
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ""
-
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@cloudsql-proxy:5432/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-
-    AIRFLOW__CORE__FERNET_KEY: 'S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA='
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-
-    AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'
-
-  volumes:
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./scripts:/opt/airflow/scripts
-    - ./config:/opt/airflow/config
-
-  depends_on:
-    redis:
-      condition: service_healthy
-
 services:
 
-  # 🔴 Cloud SQL Proxy (MAIN DB CONNECTION)
+  # 🔴 Cloud SQL Proxy
   cloudsql-proxy:
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
     container_name: cloudsql-proxy
-    command: >
-      --address 0.0.0.0
-      --port 5432
-      marwat-project:us-central1:flight-db-instance
-      --credentials-file=/config/gcp-key.json
+    user: "0:0"
+    command:
+      - "--address=0.0.0.0"
+      - "--port=5432"
+      - "marwat-project:us-central1:flight-db-instance"
+      - "--credentials-file=/config/gcp-key.json"
     volumes:
-      - ./config/gcp-key.json:/config/gcp-key.json
+      - ./config/gcp-key.json:/config/gcp-key.json:ro
     ports:
       - "5432:5432"
 
+  # 🔴 Redis
   redis:
     image: redis:7.2
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
 
-  # 🔐 Vault (Persistent)
+  # 🔐 Vault
   vault:
     image: hashicorp/vault:1.13.3
     container_name: airflow-vault
     ports:
       - "8200:8200"
-    volumes:
-      - ./vault-data:/vault/file
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: "root"
     command: >
@@ -65,7 +36,7 @@ services:
       -dev-root-token-id=root
       -dev-listen-address=0.0.0.0:8200
 
-  # 📊 Monitoring Stack
+  # 📊 Monitoring
   prometheus:
     image: prom/prometheus
     ports:
@@ -81,13 +52,61 @@ services:
     ports:
       - "3100:3100"
 
-  # 📈 Superset
+  # 📈 Superset (FIXED)
   superset:
-    image: apache/superset
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
     ports:
       - "8088:8088"
+    depends_on:
+      - cloudsql-proxy
+    command: >
+      bash -c "
+      superset db upgrade &&
+      superset fab create-admin \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --email admin@example.com \
+          --password admin || true &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
 
-  # 🚀 Airflow Services
+  # 🚀 Airflow Base
+  airflow-common:
+    &airflow-common
+    build: .
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+
+      # ✅ DB from Jenkins (.env file)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DB}
+
+      AIRFLOW__CELERY__RESULT_BACKEND: ${AIRFLOW_DB}
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+
+      AIRFLOW__CORE__FERNET_KEY: 'S_R_6hyp1PKFh3iP1N4OeunOCjCFnIuP41fEAtD64BA='
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+
+      # 🔐 Vault
+      AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "root"}'
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./scripts:/opt/airflow/scripts
+      - ./config:/opt/airflow/config
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      cloudsql-proxy:
+        condition: service_started
+
   airflow-webserver:
     <<: *airflow-common
     command: webserver
@@ -104,16 +123,16 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    entrypoint: bash
-    command: >
-      -c "
-      airflow db migrate &&
-      airflow users create \
-      --username admin \
-      --password admin \
-      --role Admin \
-      --email admin@example.com
-      "
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname admin \
+          --lastname user \
+          --role Admin \
+          --email admin@example.com || true
 
-volumes:
-  vault-data:
