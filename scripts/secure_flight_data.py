@@ -1,3 +1,4 @@
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, sha2
 
@@ -10,8 +11,8 @@ BUCKET = "secure-flight-data"
 DB_URL = "jdbc:postgresql://cloudsql-proxy:5432/flight_analytics"
 
 DB_PROPERTIES = {
-    "user": "postgres", # Matches your YAML connection string
-    "password": "MarwatSecurePass123!", # Matches your YAML connection string
+    "user": "postgres",
+    "password": os.getenv("DB_PASSWORD"),
     "driver": "org.postgresql.Driver"
 }
 
