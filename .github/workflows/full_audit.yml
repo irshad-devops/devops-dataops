@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.10'
 
-      # Optimization: Cache pip dependencies to speed up subsequent runs
+      # Match the cache key to the runner's OS and Python version
       - name: Cache pip
         uses: actions/cache@v4
         with:
@@ -31,27 +31,36 @@ jobs:
       - name: Install Audit Tools
         run: |
           python -m pip install --upgrade pip
-          # We use stubs for Spark/Airflow to keep the runner light 
-          # while still allowing Pylint to see the object definitions.
+          # Using stubs and providers-google as seen in your successful log
           pip install pylint pyspark-stubs apache-airflow-providers-google
 
-      - name: Create Pylint Configuration
+      - name: Configure Pylint
         run: |
-          # Generates a hidden config to ignore common false positives in DAGs
-          echo "[MASTER]" > .pylintrc
-          echo "ignore=venv,tests" >> .pylintrc
-          echo "[MESSAGES CONTROL]" >> .pylintrc
-          echo "disable=C0114,C0115,C0116,W0611" >> .pylintrc
+          # Create a config to handle Airflow/Spark specific linting needs
+          cat <<EOF > .pylintrc
+          [MASTER]
+          ignore=venv,tests,.github
+          
+          [MESSAGES CONTROL]
+          # Disable common false positives for Airflow DAGs
+          # C0114: Missing module docstring
+          # C0116: Missing function docstring
+          # W0611: Unused import (often triggered by airflow/spark plugins)
+          disable=C0114,C0116,W0611,C0103
+          
+          [TYPECHECK]
+          # Help pylint understand dynamic members in Spark/Airflow
+          generated-members=pyspark.*,apache.airflow.*
+          EOF
 
       - name: Run Pylint Audit
         run: |
-          # This scans all Python files in the repo
-          # The --exit-zero flag ensures the build doesn't "fail" 
-          # if you just want to see the report first. 
-          # Remove --exit-zero if you want to block merges on lint errors.
+          # Scans the repository and outputs the report
+          # --exit-zero ensures the workflow completes even if lint errors exist
           pylint **/*.py --exit-zero
 
-      - name: Security Scan (Optional)
+      - name: Security Scan
         run: |
           pip install bandit
+          # Runs a security audit on the python source code
           bandit -r . -x ./tests
