@@ -1,8 +1,14 @@
 import os
 
-SECRET_KEY = "super_secure_random_key_123456"
+# This is the secret key for Superset sessions
+SECRET_KEY = os.environ.get("SECRET_KEY", "marwat_secret_77")
 
-SQLALCHEMY_DATABASE_URI = "postgresql+psycopg2://postgres:airflow@cloudsql-proxy:5432/airflow"
+# This is the fix! It pulls the correct DB info from Docker
+# Fallback is your confirmed Cloud SQL credentials
+SQLALCHEMY_DATABASE_URI = os.environ.get(
+    "SUPERSET_SQLALCHEMY_DATABASE_URI",
+    "postgresql+psycopg2://postgres:MarwatSecurePass123!@cloudsql-proxy:5432/flight_analytics"
+)
 
 WTF_CSRF_ENABLED = True
-
+TALISMAN_ENABLED = False
